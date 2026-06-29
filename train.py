@@ -2,6 +2,7 @@ import ray
 
 from slime.ray.placement_group import create_placement_groups, create_rollout_manager, create_training_models
 from slime.utils.arguments import parse_args
+from slime.utils.data_transfer import cleanup_transfer_refs
 from slime.utils.logging_utils import configure_logger, finish_tracking, init_tracking, update_tracking_open_metrics
 from slime.utils.misc import should_run_periodic_action
 
@@ -75,14 +76,17 @@ def train(args):
 
         actor_trains_this_step = (not args.use_critic) or rollout_id >= args.num_critic_only_steps
 
-        if args.use_critic:
-            value_refs = critic_model.async_train(rollout_id, rollout_data_ref)
-            if actor_trains_this_step:
-                ray.get(actor_model.async_train(rollout_id, rollout_data_ref, external_data=value_refs))
+        try:
+            if args.use_critic:
+                value_refs = critic_model.async_train(rollout_id, rollout_data_ref)
+                if actor_trains_this_step:
+                    ray.get(actor_model.async_train(rollout_id, rollout_data_ref, external_data=value_refs))
+                else:
+                    ray.get(value_refs)
             else:
-                ray.get(value_refs)
-        else:
-            ray.get(actor_model.async_train(rollout_id, rollout_data_ref))
+                ray.get(actor_model.async_train(rollout_id, rollout_data_ref))
+        finally:
+            cleanup_transfer_refs(args, rollout_data_ref)
 
         if should_run_periodic_action(rollout_id, args.save_interval, num_rollout_per_epoch, args.num_rollout):
             save(rollout_id)

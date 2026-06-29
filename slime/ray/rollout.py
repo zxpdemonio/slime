@@ -22,7 +22,7 @@ from slime.utils.health_monitor import RolloutHealthMonitor
 from slime.utils.http_utils import _wrap_ipv6, find_available_port, get_host_info, init_http_client
 from slime.utils.logging_utils import configure_logger, init_tracking
 from slime.utils.metric_utils import compute_pass_rate, compute_rollout_step, compute_statistics, dict_add_prefix
-from slime.utils.misc import Box, group_by, load_function
+from slime.utils.misc import group_by, load_function
 from slime.utils.seqlen_balancing import get_seqlen_balanced_partitions
 from slime.utils.types import Sample
 
@@ -766,6 +766,8 @@ class RolloutManager:
         else:
             partitions = [range(i, len(total_lengths), dp_size) for i in range(dp_size)]
 
+        from slime.utils.data_transfer import put_transfer_data
+
         rollout_data_refs = []
 
         for i in range(dp_size):
@@ -785,12 +787,12 @@ class RolloutManager:
                 "rollout_routed_experts",
                 "prompt",
                 "teacher_log_probs",
+                "metadata",
             ]:
                 if key not in data:
                     continue
                 val = [data[key][j] for j in partition]
                 rollout_data[key] = val
-            # keys that need to be splited at train side
             for key in [
                 "raw_reward",
                 "total_lengths",
@@ -798,10 +800,9 @@ class RolloutManager:
                 if key not in data:
                     continue
                 rollout_data[key] = data[key]
-            # Pass dynamic global_batch_size to training side
             if hasattr(self, "_dynamic_global_batch_size"):
                 rollout_data["dynamic_global_batch_size"] = self._dynamic_global_batch_size
-            rollout_data_refs.append(Box(ray.put(rollout_data)))
+            rollout_data_refs.append(put_transfer_data(self.args, rollout_data, partition=f"dp{i}"))
         return rollout_data_refs
 
 

@@ -641,6 +641,19 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                     "and should be set to a larger value than `max_tokens_per_gpu` if you want better performance. "
                 ),
             )
+            parser.add_argument(
+                "--transfer-backend",
+                type=str,
+                choices=["ray", "mooncake"],
+                default="ray",
+                help="Backend used for rollout data put/get transfer.",
+            )
+            parser.add_argument(
+                "--mooncake-store-init-kwargs",
+                type=json.loads,
+                default=None,
+                help="JSON kwargs used to initialize MooncakeDistributedStore for rollout transfer.",
+            )
             return parser
 
         def add_eval_arguments(parser):
