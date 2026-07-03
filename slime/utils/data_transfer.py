@@ -1,10 +1,30 @@
+import logging
 import os
 from functools import cache
 from typing import Any
 
+try:
+    from mooncake.store import MooncakeDistributedStore
+    from mooncake.structured_object_store import MooncakeBundleTransfer, export_dataproto_ref
+
+    _MOONCAKE_AVAILABLE = True
+except ImportError:
+    _MOONCAKE_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
+
+
+def _use_mooncake(args: Any) -> bool:
+    if getattr(args, "transfer_backend", "ray") != "mooncake":
+        return False
+    if not _MOONCAKE_AVAILABLE:
+        logger.warning("transfer_backend='mooncake' but mooncake is not installed, falling back to ray")
+        return False
+    return True
+
 
 def put_transfer_data(args: Any, data: dict[str, Any], partition: str = "default") -> Any:
-    if getattr(args, "transfer_backend", "ray") == "ray":
+    if not _use_mooncake(args):
         import ray
         from slime.utils.misc import Box
 
@@ -18,22 +38,24 @@ def put_transfer_data(args: Any, data: dict[str, Any], partition: str = "default
         stage="rollout",
         chunk_bytes=(getattr(args, "mooncake_store_init_kwargs", None) or {}).get("chunk_bytes"),
     )
-    from mooncake.structured_object_store import export_dataproto_ref
-
     return export_dataproto_ref(ref)
 
 
 def get_transfer_data(args: Any, ref: Any) -> dict[str, Any]:
-    if getattr(args, "transfer_backend", "ray") == "ray":
+    if not _use_mooncake(args):
         import ray
         from slime.utils.misc import Box
 
         return ray.get(ref.inner if isinstance(ref, Box) else ref)
-    return _mooncake_transfer(args).get_legacy_dict(ref)
+
+    transfer = _mooncake_transfer(args)
+    result = transfer.get_legacy_dict(ref)
+    transfer.release_result(result)
+    return result
 
 
 def cleanup_transfer_refs(args: Any, refs: list[Any] | None) -> None:
-    if getattr(args, "transfer_backend", "ray") == "ray" or refs is None:
+    if not _use_mooncake(args) or refs is None:
         return
     transfer = _mooncake_transfer(args)
     for ref in refs:
@@ -42,9 +64,6 @@ def cleanup_transfer_refs(args: Any, refs: list[Any] | None) -> None:
 
 @cache
 def _mooncake_transfer_cached(config_items: tuple[tuple[str, Any], ...]):
-    from mooncake.store import MooncakeDistributedStore
-    from mooncake.structured_object_store import MooncakeBundleTransfer
-
     config = dict(config_items)
     store = MooncakeDistributedStore()
     ret = store.setup(
