@@ -2007,4 +2007,9 @@ def slime_validate_args(args):
     if args.only_train_params_name_list and args.freeze_params_name_list:
         raise ValueError("You can only specify ONE of: --only-train-params-name-list, or --freeze-params-name-list.")
 
+    if getattr(args, "rollout_data_transport", "object-store") == "mooncake":
+        from slime.utils.data_transfer import check_mooncake_available
+
+        check_mooncake_available()
+
     _validate_update_weight_args(args)
