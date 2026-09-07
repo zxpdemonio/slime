@@ -119,6 +119,16 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 default="{}",
                 help="Extra environment variables for training process, e.g. PyTorch memory management ones.",
             )
+            parser.add_argument(
+                "--force-fp8-ue8m0-scale",
+                action="store_true",
+                default=False,
+                help=(
+                    "Quantize block-FP8 rollout weights with power-of-two FP32 scales, "
+                    "independent of the training GPU architecture. Blackwell-only scale "
+                    "packing remains controlled by the rollout runtime requirements."
+                ),
+            )
             # Delta weight sync.
             parser.add_argument(
                 "--update-weight-mode",
@@ -479,7 +489,9 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 default=None,
                 help=(
                     "Only substitue the `def generate(args, sample, sampling_params)` function within the example rollout function. "
-                    "This should be useful if you need to implement some special rollout logic, e.g. multi-turn, function calling."
+                    "This should be useful if you need to implement some special rollout logic, e.g. multi-turn, function calling. "
+                    "Set `abort_mode = 'request'` on the function when it implements request-level abort; otherwise "
+                    "Slime uses server-wide abort."
                 ),
             )
             parser.add_argument(
@@ -648,8 +660,9 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 default=None,
                 help=(
                     "The path to the prompt data. "
-                    "Currently we only support jsonl format, and each line should contains --input-key and --label-key, "
-                    "which will be used as the prompt and the label respectively. "
+                    "Supported formats are JSONL and Parquet (Parquet requires pyarrow). "
+                    "Each record should contain --input-key and --label-key, which will be used as the prompt and "
+                    "the label respectively. "
                     "If you want to use a custom template, you can set --apply-chat-template to true, in that case, "
                     "the input should be the same structure as an openai message, e.g. [{'role': 'user', 'content': 'blabla'}]. "
                 ),
